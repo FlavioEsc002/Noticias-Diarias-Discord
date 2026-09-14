@@ -1,25 +1,31 @@
-name: Daily News Discord
+import os
+import requests
 
-on:
-  workflow_dispatch:
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
 
-jobs:
-  enviar-noticia:
-    runs-on: ubuntu-latest
+if not WEBHOOK_URL:
+    raise Exception("DISCORD_WEBHOOK não configurado.")
 
-    steps:
-      - name: Baixar arquivos
-        uses: actions/checkout@v4
+mensagem = """
+# 📰・DAILY NEWS
 
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+✅ Bot funcionando corretamente!
 
-      - name: Instalar requests
-        run: pip install requests
+Esta é uma mensagem de teste enviada automaticamente pelo GitHub Actions.
+"""
 
-      - name: Enviar mensagem para o Discord
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: python daily_news.py
+response = requests.post(
+    WEBHOOK_URL,
+    json={
+        "content": mensagem,
+        "username": "Daily News"
+    },
+    timeout=30
+)
+
+print("Status HTTP:", response.status_code)
+print("Resposta Discord:", response.text)
+
+response.raise_for_status()
+
+print("Mensagem enviada com sucesso!")
