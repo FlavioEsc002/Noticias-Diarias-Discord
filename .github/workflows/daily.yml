@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos do repositorio
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
       - name: Configurar Python
