@@ -6,9 +6,8 @@ import hashlib
 import requests
 import feedparser
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
-from email.utils import parsedate_to_datetime
 
 
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
@@ -18,7 +17,6 @@ if not WEBHOOK_URL:
 
 
 MAX_NOTICIAS_POR_CATEGORIA = 2
-MAX_IDADE_HORAS = 48
 
 CATEGORIAS = {
     "🤖 Inteligência Artificial":
@@ -53,7 +51,7 @@ def extrair_fonte(titulo):
         partes = titulo.rsplit(" - ", 1)
         return partes[0], partes[1]
 
-    return titulo, "Fonte"
+    return titulo, "Fonte não identificada"
 
 
 def normalizar_titulo(titulo):
@@ -69,33 +67,9 @@ def normalizar_titulo(titulo):
 
 
 def gerar_id(titulo):
-    titulo = normalizar_titulo(titulo)
-
     return hashlib.md5(
-        titulo.encode("utf-8")
+        normalizar_titulo(titulo).encode("utf-8")
     ).hexdigest()
-
-
-def obter_data(item):
-    if item.get("published"):
-        try:
-            data = parsedate_to_datetime(
-                item.published
-            )
-
-            if data.tzinfo is None:
-                data = data.replace(
-                    tzinfo=ZoneInfo(
-                        "America/Sao_Paulo"
-                    )
-                )
-
-            return data
-
-        except Exception:
-            pass
-
-    return None
 
 
 def enviar_discord(payload):
@@ -105,10 +79,7 @@ def enviar_discord(payload):
         timeout=30
     )
 
-    print(
-        "Discord HTTP:",
-        resposta.status_code
-    )
+    print("Discord HTTP:", resposta.status_code)
 
     if resposta.status_code not in (200, 204):
         print(resposta.text)
@@ -119,13 +90,7 @@ def enviar_discord(payload):
 def buscar_noticias(url, ids_usados):
     feed = feedparser.parse(url)
 
-    agora = datetime.now(
-        ZoneInfo("America/Sao_Paulo")
-    )
-
-    limite = agora - timedelta(
-        hours=MAX_IDADE_HORAS
-    )
+    print("Feed encontrado:", len(feed.entries), "itens")
 
     noticias = []
 
@@ -148,20 +113,7 @@ def buscar_noticias(url, ids_usados):
         if id_noticia in ids_usados:
             continue
 
-        data = obter_data(item)
-
-        if data:
-            data_sp = data.astimezone(
-                ZoneInfo("America/Sao_Paulo")
-            )
-
-            if data_sp < limite:
-                continue
-
-        link = item.get(
-            "link",
-            ""
-        )
+        link = item.get("link", "")
 
         if not link:
             continue
@@ -175,8 +127,7 @@ def buscar_noticias(url, ids_usados):
         noticias.append({
             "titulo": titulo,
             "fonte": fonte,
-            "link": link,
-            "data": data
+            "link": link
         })
 
         ids_usados.add(
@@ -194,27 +145,7 @@ agora = datetime.now(
 )
 
 ids_usados = set()
-
-
-cabecalho = {
-    "username": "Daily News",
-
-    "content": (
-        "# 📰・DAILY NEWS\n\n"
-        f"📅 **{agora.strftime('%d/%m/%Y')}**\n"
-        "🕕 Atualização diária das **06:00**\n\n"
-        "As principais notícias de tecnologia para começar o dia."
-    )
-}
-
-
-enviar_discord(
-    cabecalho
-)
-
-time.sleep(1)
-
-total_noticias = 0
+categorias_encontradas = []
 
 
 for categoria, url in CATEGORIAS.items():
@@ -224,8 +155,42 @@ for categoria, url in CATEGORIAS.items():
         ids_usados
     )
 
-    if not noticias:
-        continue
+    if noticias:
+        categorias_encontradas.append(
+            (categoria, noticias)
+        )
+
+
+if not categorias_encontradas:
+    enviar_discord({
+        "username": "Daily News",
+        "content": (
+            "⚠️ **Daily News**\n\n"
+            "Nenhuma notícia foi encontrada nesta atualização."
+        )
+    })
+
+    raise SystemExit()
+
+
+enviar_discord({
+    "username": "Daily News",
+
+    "content": (
+        "# 📰・DAILY NEWS\n\n"
+        f"📅 **{agora.strftime('%d/%m/%Y')}**\n"
+        "🕕 Atualização diária das **06:00**\n\n"
+        "As principais notícias de tecnologia para começar o dia."
+    )
+})
+
+time.sleep(1)
+
+
+total_noticias = 0
+
+
+for categoria, noticias in categorias_encontradas:
 
     total_noticias += len(
         noticias
@@ -234,13 +199,15 @@ for categoria, url in CATEGORIAS.items():
     descricao = ""
 
     for noticia in noticias:
+
         descricao += (
             f"### {noticia['titulo']}\n"
             f"📰 **{noticia['fonte']}**\n"
-            f"🔗 [Ler notícia completa]({noticia['link']})\n\n"
+            f"🔗 [Ler notícia]({noticia['link']})\n\n"
         )
 
-    payload = {
+
+    enviar_discord({
         "username": "Daily News",
 
         "embeds": [
@@ -248,11 +215,25 @@ for categoria, url in CATEGORIAS.items():
                 "title": categoria,
                 "description": descricao,
                 "color": 3447003,
+
                 "footer": {
                     "text": "Daily News • ADS"
                 }
             }
         ]
-    }
+    })
+
+    time.sleep(1)
 
 
+enviar_discord({
+    "username": "Daily News",
+
+    "content": (
+        f"📡 **{total_noticias} notícias selecionadas hoje.**\n"
+        "Próxima atualização amanhã às **06:00**."
+    )
+})
+
+
+print("Daily News concluído.")
